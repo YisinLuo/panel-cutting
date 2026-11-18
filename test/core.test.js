@@ -155,3 +155,18 @@ test('紅豆杉組用規格 2（可用 2780×2050）一片大板放得下', () =
   assert.equal(res.boards.length, 1);
   assertValidPack(res, YEW, 4);
 });
+
+test('預設每刀扣 6mm（媽媽改的）：規格 4 剛好塞滿與差 1mm 的情況', () => {
+  assert.equal(core.DEFAULT_SETTINGS.blade, 6);
+  const spec4 = core.DEFAULT_SETTINGS.specs[3];
+  // 不帶 blade 就用預設 6
+  // 長向可用 2405：3 片 797 → 797×3 + 2×6 = 2403 ≤ 2405；798 → 2406 超過
+  const fit = core.packGroup([{ name: 'a', L: 797, W: 1190, Q: 3 }], spec4);
+  assert.equal(fit.blade, 6);
+  assert.equal(fit.boards.length, 1);
+  assertValidPack(fit, [{ name: 'a', L: 797, W: 1190, Q: 3 }], 6);
+  assert.equal(core.packGroup([{ name: 'a', L: 798, W: 1190, Q: 3 }], spec4).boards.length, 2);
+  // 寬向可用 1190：8 條 143 → 143×8 + 7×6 = 1186 ≤ 1190；144 → 1194 超過
+  assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 143, Q: 8 }], spec4).boards.length, 1);
+  assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 144, Q: 8 }], spec4).boards.length, 2);
+});

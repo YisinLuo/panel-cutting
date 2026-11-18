@@ -3,9 +3,11 @@
   'use strict';
 
   const core = window.PanelCore;
-  // v3：每個規格各自記修邊後可用尺寸。舊版（v1/v2）只沿用大板尺寸、選的規格、刀片厚度與封邊加長
-  const STORE_KEY = 'panelCutting.settings.v3';
-  const OLD_STORE_KEYS = ['panelCutting.settings.v2', 'panelCutting.settings.v1'];
+  // v4：刀片厚度預設從 4 改 6。舊版存的 4（舊預設）換成新預設，其他值照舊沿用
+  // v3：每個規格各自記修邊後可用尺寸。v1/v2 沒有可用尺寸，只沿用大板尺寸、選的規格與封邊加長
+  const STORE_KEY = 'panelCutting.settings.v4';
+  const OLD_STORE_KEYS = ['panelCutting.settings.v3', 'panelCutting.settings.v2', 'panelCutting.settings.v1'];
+  const OLD_DEFAULT_BLADE = 4;
   // 每個「顏色|厚度」記住選過的大板規格，下次同顏色自動套用
   const COLOR_SPEC_KEY = 'panelCutting.colorSpecs.v1';
   const $ = (id) => document.getElementById(id);
@@ -58,12 +60,13 @@
       const W = num(o.W, sp.W) || sp.W;
       // 舊版沒有可用尺寸：大板尺寸沒改過就用新預設，有改過就四邊各修 10
       const sameSize = L === sp.L && W === sp.W;
-      const useL = current ? num(o.useL, sameSize ? sp.useL : L - 20) : sameSize ? sp.useL : L - 20;
-      const useW = current ? num(o.useW, sameSize ? sp.useW : W - 20) : sameSize ? sp.useW : W - 20;
+      const useL = num(o.useL, sameSize ? sp.useL : L - 20);
+      const useW = num(o.useW, sameSize ? sp.useW : W - 20);
       return { L, W, useL: Math.min(useL || L, L), useW: Math.min(useW || W, W) };
     });
+    const oldBlade = s.blade != null ? num(s.blade, d.blade) : d.blade;
     return {
-      blade: s.blade != null ? num(s.blade, d.blade) : d.blade,
+      blade: !current && oldBlade === OLD_DEFAULT_BLADE ? d.blade : oldBlade,
       bandAdd: num(s.bandAdd, d.bandAdd),
       specs,
       defaultSpec: [0, 1, 2, 3].includes(Number(s.defaultSpec)) ? Number(s.defaultSpec) : d.defaultSpec,
