@@ -137,16 +137,19 @@ test('相同排法的大板會合併計數', () => {
   assert.equal(groups[0].count, 2);
 });
 
-test('預設規格 4 修邊後可用 2405×1190：踢腳板 2401 放得進，2406 放不進', () => {
+test('預設規格 4 修邊後可用 2405×1195：踢腳板 2401 放得進，2406 放不進', () => {
   const spec4 = core.DEFAULT_SETTINGS.specs[3];
-  assert.deepEqual(spec4, { L: 2420, W: 1210, useL: 2405, useW: 1190 });
+  assert.deepEqual(spec4, { L: 2420, W: 1210, useL: 2405, useW: 1195 });
   const ok = core.packGroup([{ name: '踢腳板', L: 2401, W: 141, Q: 8 }], spec4, { blade: 4 });
   assert.deepEqual(ok.tooBig, []);
-  assert.equal(ok.boards.length, 1); // 141×8 + 7×4 = 1156 ≤ 1190
-  assert.deepEqual(ok.offset, { x: 7.5, y: 10 });
+  assert.equal(ok.boards.length, 1); // 141×8 + 7×4 = 1156 ≤ 1195
+  assert.deepEqual(ok.offset, { x: 7.5, y: 7.5 });
   assertValidPack(ok, [{ name: '踢腳板', L: 2401, W: 141, Q: 8 }], 4);
   const bad = core.packGroup([{ name: '太長', L: 2406, W: 141, Q: 1 }], spec4, { blade: 4 });
   assert.equal(bad.tooBig.length, 1);
+  // 寬向：1195 剛好放得進，1196 放不進
+  assert.deepEqual(core.packGroup([{ name: '滿寬', L: 600, W: 1195, Q: 1 }], spec4).tooBig, []);
+  assert.equal(core.packGroup([{ name: '太寬', L: 600, W: 1196, Q: 1 }], spec4).tooBig.length, 1);
 });
 
 test('紅豆杉組用規格 2（可用 2780×2050）一片大板放得下', () => {
@@ -166,7 +169,7 @@ test('預設每刀扣 6mm（媽媽改的）：規格 4 剛好塞滿與差 1mm �
   assert.equal(fit.boards.length, 1);
   assertValidPack(fit, [{ name: 'a', L: 797, W: 1190, Q: 3 }], 6);
   assert.equal(core.packGroup([{ name: 'a', L: 798, W: 1190, Q: 3 }], spec4).boards.length, 2);
-  // 寬向可用 1190：8 條 143 → 143×8 + 7×6 = 1186 ≤ 1190；144 → 1194 超過
-  assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 143, Q: 8 }], spec4).boards.length, 1);
-  assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 144, Q: 8 }], spec4).boards.length, 2);
+  // 寬向可用 1195：8 條 144 → 144×8 + 7×6 = 1194 ≤ 1195；145 → 1202 超過
+  assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 144, Q: 8 }], spec4).boards.length, 1);
+  assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 145, Q: 8 }], spec4).boards.length, 2);
 });

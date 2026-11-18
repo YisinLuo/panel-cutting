@@ -3,11 +3,14 @@
   'use strict';
 
   const core = window.PanelCore;
-  // v4：刀片厚度預設從 4 改 6。舊版存的 4（舊預設）換成新預設，其他值照舊沿用
+  // 存的設定如果還是「當時的預設值」，就換成新預設；自己改過的值照舊沿用。
+  // v5：規格 4 修邊後可用寬預設從 1190 改 1195（v3、v4 存的 1190 換掉）
+  // v4：刀片厚度預設從 4 改 6（v1～v3 存的 4 換掉）
   // v3：每個規格各自記修邊後可用尺寸。v1/v2 沒有可用尺寸，只沿用大板尺寸、選的規格與封邊加長
-  const STORE_KEY = 'panelCutting.settings.v4';
-  const OLD_STORE_KEYS = ['panelCutting.settings.v3', 'panelCutting.settings.v2', 'panelCutting.settings.v1'];
-  const OLD_DEFAULT_BLADE = 4;
+  const STORE_KEY = 'panelCutting.settings.v5';
+  const OLD_STORE_KEYS = ['panelCutting.settings.v4', 'panelCutting.settings.v3', 'panelCutting.settings.v2', 'panelCutting.settings.v1'];
+  const OLD_DEFAULT_BLADE = { v3: 4, v2: 4, v1: 4 };
+  const OLD_DEFAULT_USE_W = { v4: [, , , 1190], v3: [, , , 1190] };
   // 每個「顏色|厚度」記住選過的大板規格，下次同顏色自動套用
   const COLOR_SPEC_KEY = 'panelCutting.colorSpecs.v1';
   const $ = (id) => document.getElementById(id);
@@ -50,8 +53,12 @@
   function loadSettings() {
     const d = defaults();
     let s = loadJson(STORE_KEY, null);
-    const current = !!s;
-    for (const k of OLD_STORE_KEYS) if (!s) s = loadJson(k, null);
+    let ver = s ? 'current' : '';
+    for (const k of OLD_STORE_KEYS) {
+      if (s) break;
+      s = loadJson(k, null);
+      if (s) ver = k.split('.').pop();
+    }
     if (!s) return d;
     const num = (v, fb) => (v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : fb);
     const specs = d.specs.map((sp, i) => {
@@ -61,12 +68,13 @@
       // 舊版沒有可用尺寸：大板尺寸沒改過就用新預設，有改過就四邊各修 10
       const sameSize = L === sp.L && W === sp.W;
       const useL = num(o.useL, sameSize ? sp.useL : L - 20);
-      const useW = num(o.useW, sameSize ? sp.useW : W - 20);
+      let useW = num(o.useW, sameSize ? sp.useW : W - 20);
+      if (sameSize && OLD_DEFAULT_USE_W[ver] && useW === OLD_DEFAULT_USE_W[ver][i]) useW = sp.useW;
       return { L, W, useL: Math.min(useL || L, L), useW: Math.min(useW || W, W) };
     });
     const oldBlade = s.blade != null ? num(s.blade, d.blade) : d.blade;
     return {
-      blade: !current && oldBlade === OLD_DEFAULT_BLADE ? d.blade : oldBlade,
+      blade: oldBlade === OLD_DEFAULT_BLADE[ver] ? d.blade : oldBlade,
       bandAdd: num(s.bandAdd, d.bandAdd),
       specs,
       defaultSpec: [0, 1, 2, 3].includes(Number(s.defaultSpec)) ? Number(s.defaultSpec) : d.defaultSpec,
