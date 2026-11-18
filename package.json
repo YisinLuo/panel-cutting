@@ -1,0 +1,11 @@
+{
+  "name": "panel-cutting",
+  "private": true,
+  "description": "板材計算：讀生產料單 PDF，算大板片數與封邊長度",
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "devDependencies": {
+    "pdfjs-dist": "3.11.174"
+  }
+}

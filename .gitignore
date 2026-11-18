@@ -1,0 +1,11 @@
+# 料單含客戶訂單資料，絕不能進公開 repo
+*.pdf
+*.jpg
+*.jpeg
+*.png
+
+node_modules/
+.claude/
+
+# 用實際料單的測試（含訂單內容），只留在本機
+test/local-*
