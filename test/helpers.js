@@ -27,8 +27,13 @@ function isGuillotine(rects, x0, y0, x1, y1) {
  * 檢查排版結果：不重疊、在修邊範圍內、料件之間留得下刀縫、件數正確、方向沒轉、切得出來。
  * 刀縫檢查：每片料右邊、下邊各加一個刀寬後不可重疊，且能一刀到底切開。
  */
-function assertValidPack(res, rows, spec, blade, trim) {
+function assertValidPack(res, rows, blade) {
   const expected = rows.reduce((s, r) => s + r.Q, 0) - res.tooBig.reduce((s, r) => s + r.Q, 0);
+  const x0 = res.offset.x;
+  const y0 = res.offset.y;
+  const x1 = x0 + res.usable.L;
+  const y1 = y0 + res.usable.W;
+  assert.ok(x1 <= res.boardSize.L && y1 <= res.boardSize.W, '可用範圍超出大板');
   let count = 0;
   for (const b of res.boards) {
     const ps = b.placements;
@@ -37,7 +42,7 @@ function assertValidPack(res, rows, spec, blade, trim) {
       const r = rows[q.ref];
       assert.equal(q.w, r.L, '料件的長要對大板的長（不旋轉）');
       assert.equal(q.h, r.W);
-      assert.ok(q.x >= trim && q.y >= trim && q.x + q.w <= spec.L - trim && q.y + q.h <= spec.W - trim, '超出修邊範圍');
+      assert.ok(q.x >= x0 && q.y >= y0 && q.x + q.w <= x1 && q.y + q.h <= y1, '超出修邊後的可用範圍');
     }
     const inflated = ps.map((q) => ({ x: q.x, y: q.y, w: q.w + blade, h: q.h + blade }));
     for (let i = 0; i < inflated.length; i++)
@@ -47,7 +52,7 @@ function assertValidPack(res, rows, spec, blade, trim) {
         const overlap = a.x < c.x + c.w && c.x < a.x + a.w && a.y < c.y + c.h && c.y < a.y + a.h;
         assert.ok(!overlap, '料件重疊或刀縫不夠');
       }
-    assert.ok(isGuillotine(inflated, trim, trim, spec.L - trim + blade, spec.W - trim + blade), '排法無法一刀到底切出');
+    assert.ok(isGuillotine(inflated, x0, y0, x1 + blade, y1 + blade), '排法無法一刀到底切出');
   }
   assert.equal(count, expected, '件數不符');
   assert.ok(res.boards.length >= res.lowerBound);

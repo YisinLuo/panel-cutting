@@ -17,16 +17,17 @@
   const NUM_RE = /^\d+(?:\.\d+)?$/;
   const CODE_RE = /^(\d+)\s*([AP])$/i;
 
-  // 媽媽確認（2026-11-18）：大板上下左右先修 10mm、每裁一刀扣 4mm（刀片厚度）、料件尺寸不另外加
+  // 媽媽確認（2026-11-18）：每裁一刀扣 4mm（刀片厚度）、料件尺寸不另外加。
+  // 大板修邊：原則上四邊各修 10mm，但「只是大概」——規格 4（2420）長向一般可以用到完整的 2405。
+  // 所以每個規格各自記「修邊後可用的長 useL × 寬 useW」。
   const DEFAULT_SETTINGS = {
     blade: 4, // 每刀扣（刀片厚度）
-    trim: 10, // 大板每邊修邊
     bandAdd: 30, // 封邊每邊加長
     specs: [
-      { L: 2850, W: 2080 },
-      { L: 2800, W: 2070 },
-      { L: 3150, W: 2070 },
-      { L: 2420, W: 1210 },
+      { L: 2850, W: 2080, useL: 2830, useW: 2060 },
+      { L: 2800, W: 2070, useL: 2780, useW: 2050 },
+      { L: 3150, W: 2070, useL: 3130, useW: 2050 },
+      { L: 2420, W: 1210, useL: 2405, useW: 1190 },
     ],
     defaultSpec: 3, // 規格 4
   };
@@ -509,7 +510,7 @@
 
   /**
    * rows: 同一組料件 [{ L, W, Q, name, ... }]
-   * spec: { L, W } 大板尺寸
+   * spec: { L, W, useL, useW } 大板尺寸與修邊後可用尺寸（沒給 useL/useW 就四邊各修 opts.trim，預設 10）
    * opts: { blade, trim }
    *
    * 刀縫的算法：修邊後可用範圍 usable，料件之間每一刀吃掉 blade。
@@ -518,9 +519,12 @@
    */
   function packGroup(rows, spec, opts) {
     const blade = opts && opts.blade != null ? opts.blade : DEFAULT_SETTINGS.blade;
-    const trim = opts && opts.trim != null ? opts.trim : DEFAULT_SETTINGS.trim;
-    const usableL = spec.L - 2 * trim;
-    const usableW = spec.W - 2 * trim;
+    const trim = opts && opts.trim != null ? opts.trim : 10;
+    const usableL = Math.min(spec.L, spec.useL > 0 ? spec.useL : spec.L - 2 * trim);
+    const usableW = Math.min(spec.W, spec.useW > 0 ? spec.useW : spec.W - 2 * trim);
+    // 畫圖用：可用範圍放在大板正中間（修邊兩邊平分）
+    const offX = (spec.L - usableL) / 2;
+    const offY = (spec.W - usableW) / 2;
     const BW = usableL + blade;
     const BH = usableW + blade;
     const pieces = [];
@@ -543,7 +547,7 @@
       lowerBound: pieces.length ? Math.ceil(pieceArea / (BW * BH)) : 0,
       boardSize: { L: spec.L, W: spec.W },
       usable: { L: usableL, W: usableW },
-      trim,
+      offset: { x: offX, y: offY },
       blade,
     };
     if (!pieces.length) return result;
@@ -583,7 +587,7 @@
     // 換回大板實際座標：位置加上修邊，大小用料件實際尺寸（刀縫留在料件右邊、下邊）
     result.boards = best.map((pl) => {
       const placements = pl
-        .map((q) => ({ x: q.x + trim, y: q.y + trim, w: rows[q.ref].L, h: rows[q.ref].W, ref: q.ref }))
+        .map((q) => ({ x: q.x + offX, y: q.y + offY, w: rows[q.ref].L, h: rows[q.ref].W, ref: q.ref }))
         .sort((a, b) => a.y - b.y || a.x - b.x);
       const used = placements.reduce((s, q) => s + q.w * q.h, 0);
       return { placements, fill: used / (spec.L * spec.W) };

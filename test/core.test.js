@@ -56,14 +56,14 @@ test('封邊：寬欄代碼封長邊、長欄代碼封寬邊', () => {
 test('30mm 檯面組用規格 4 需要 5 片大板', () => {
   const res = core.packGroup(COUNTERTOP, SPEC4, OPTS);
   assert.equal(res.boards.length, 5);
-  assertValidPack(res, COUNTERTOP, SPEC4, 4, 10);
+  assertValidPack(res, COUNTERTOP, 4);
 });
 
 test('18mm 紅豆杉組：踢腳板 2401 超過修邊後的 2400 放不進，其餘 2 片大板', () => {
   const res = core.packGroup(YEW, SPEC4, OPTS);
   assert.deepEqual(res.tooBig.map((r) => [r.L, r.W, r.Q]), [[2401, 141, 4]]);
   assert.equal(res.boards.length, 2);
-  assertValidPack(res, YEW, SPEC4, 4, 10);
+  assertValidPack(res, YEW, 4);
 });
 
 test('修邊後可用 2400×1190：剛好的放得進，多 1mm 就挑出來', () => {
@@ -76,7 +76,7 @@ test('修邊後可用 2400×1190：剛好的放得進，多 1mm 就挑出來', (
   assert.deepEqual(res.tooBig.map((r) => r.name), ['太長', '太寬']);
   assert.equal(res.boards.length, 1);
   assert.deepEqual(res.usable, { L: 2400, W: 1190 });
-  assertValidPack(res, rows, SPEC4, 4, 10);
+  assertValidPack(res, rows, 4);
 });
 
 test('每刀扣 4mm：剛好塞滿與差 1mm 的情況', () => {
@@ -92,7 +92,7 @@ test('每刀扣 4mm：剛好塞滿與差 1mm 的情況', () => {
   // 第一片從修邊後的位置開始
   assert.equal(fit.boards[0].placements[0].x, 10);
   assert.equal(fit.boards[0].placements[0].y, 10);
-  assertValidPack(fit, [{ name: 'a', L: 797, W: 1190, Q: 3 }], SPEC4, 4, 10);
+  assertValidPack(fit, [{ name: 'a', L: 797, W: 1190, Q: 3 }], 4);
 });
 
 test('數量 0 或空清單不會出錯', () => {
@@ -111,7 +111,7 @@ test('隨機料件：所有排法都合法（不重疊、可一刀切）', () =>
       rows.push({ name: `r${i}`, L: 50 + Math.floor(rand() * 2300), W: 30 + Math.floor(rand() * 1100), Q: 1 + Math.floor(rand() * 4) });
     }
     const res = core.packGroup(rows, SPEC4, OPTS);
-    assertValidPack(res, rows, SPEC4, 4, 10);
+    assertValidPack(res, rows, 4);
 
     const pieces = [];
     rows.forEach((r, ref) => {
@@ -135,4 +135,23 @@ test('相同排法的大板會合併計數', () => {
   const groups = core.groupIdenticalBoards(res.boards, rows);
   assert.equal(groups.length, 1);
   assert.equal(groups[0].count, 2);
+});
+
+test('預設規格 4 修邊後可用 2405×1190：踢腳板 2401 放得進，2406 放不進', () => {
+  const spec4 = core.DEFAULT_SETTINGS.specs[3];
+  assert.deepEqual(spec4, { L: 2420, W: 1210, useL: 2405, useW: 1190 });
+  const ok = core.packGroup([{ name: '踢腳板', L: 2401, W: 141, Q: 8 }], spec4, { blade: 4 });
+  assert.deepEqual(ok.tooBig, []);
+  assert.equal(ok.boards.length, 1); // 141×8 + 7×4 = 1156 ≤ 1190
+  assert.deepEqual(ok.offset, { x: 7.5, y: 10 });
+  assertValidPack(ok, [{ name: '踢腳板', L: 2401, W: 141, Q: 8 }], 4);
+  const bad = core.packGroup([{ name: '太長', L: 2406, W: 141, Q: 1 }], spec4, { blade: 4 });
+  assert.equal(bad.tooBig.length, 1);
+});
+
+test('紅豆杉組用規格 2（可用 2780×2050）一片大板放得下', () => {
+  const res = core.packGroup(YEW, core.DEFAULT_SETTINGS.specs[1], { blade: 4 });
+  assert.deepEqual(res.tooBig, []);
+  assert.equal(res.boards.length, 1);
+  assertValidPack(res, YEW, 4);
 });

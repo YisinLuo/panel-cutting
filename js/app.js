@@ -3,9 +3,11 @@
   'use strict';
 
   const core = window.PanelCore;
-  // v2：改成修邊＋刀縫算法。舊版（v1）只沿用大板尺寸與選的規格，其他用新預設值
-  const STORE_KEY = 'panelCutting.settings.v2';
-  const OLD_STORE_KEY = 'panelCutting.settings.v1';
+  // v3：每個規格各自記修邊後可用尺寸。舊版（v1/v2）只沿用大板尺寸、選的規格、刀片厚度與封邊加長
+  const STORE_KEY = 'panelCutting.settings.v3';
+  const OLD_STORE_KEYS = ['panelCutting.settings.v2', 'panelCutting.settings.v1'];
+  // 每個「顏色|厚度」記住選過的大板規格，下次同顏色自動套用
+  const COLOR_SPEC_KEY = 'panelCutting.colorSpecs.v1';
   const $ = (id) => document.getElementById(id);
 
   const state = {
@@ -14,7 +16,7 @@
     rows: [],
     edited: false,
     settings: loadSettings(),
-    overrides: {}, // 組別 key → 規格 index
+    colorSpecs: loadJson(COLOR_SPEC_KEY, {}), // 組別 key（顏色|厚度）→ 規格 index
     results: [],
   };
 
@@ -25,39 +27,56 @@
     return JSON.parse(JSON.stringify(core.DEFAULT_SETTINGS));
   }
 
-  function loadSettings() {
-    const d = defaults();
+  function loadJson(key, fallback) {
     try {
-      let raw = window.localStorage.getItem(STORE_KEY);
-      let old = false;
-      if (!raw) {
-        raw = window.localStorage.getItem(OLD_STORE_KEY);
-        old = true;
-      }
-      if (!raw) return d;
-      const s = JSON.parse(raw);
-      const num = (v, fb) => (v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : fb);
-      return {
-        blade: old ? d.blade : num(s.blade, d.blade),
-        trim: old ? d.trim : num(s.trim, d.trim),
-        bandAdd: num(s.bandAdd, d.bandAdd),
-        specs: d.specs.map((sp, i) => ({
-          L: num(s.specs && s.specs[i] && s.specs[i].L, sp.L) || sp.L,
-          W: num(s.specs && s.specs[i] && s.specs[i].W, sp.W) || sp.W,
-        })),
-        defaultSpec: [0, 1, 2, 3].includes(Number(s.defaultSpec)) ? Number(s.defaultSpec) : d.defaultSpec,
-      };
+      const raw = window.localStorage.getItem(key);
+      const v = raw ? JSON.parse(raw) : null;
+      return v && typeof v === 'object' ? v : fallback;
     } catch (e) {
-      return d;
+      return fallback;
     }
   }
 
-  function saveSettings() {
+  function saveJson(key, value) {
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify(state.settings));
+      window.localStorage.setItem(key, JSON.stringify(value));
     } catch (e) {
       /* 無痕模式等情況存不了，不影響使用 */
     }
+  }
+
+  function loadSettings() {
+    const d = defaults();
+    let s = loadJson(STORE_KEY, null);
+    const current = !!s;
+    for (const k of OLD_STORE_KEYS) if (!s) s = loadJson(k, null);
+    if (!s) return d;
+    const num = (v, fb) => (v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : fb);
+    const specs = d.specs.map((sp, i) => {
+      const o = (s.specs && s.specs[i]) || {};
+      const L = num(o.L, sp.L) || sp.L;
+      const W = num(o.W, sp.W) || sp.W;
+      // 舊版沒有可用尺寸：大板尺寸沒改過就用新預設，有改過就四邊各修 10
+      const sameSize = L === sp.L && W === sp.W;
+      const useL = current ? num(o.useL, sameSize ? sp.useL : L - 20) : sameSize ? sp.useL : L - 20;
+      const useW = current ? num(o.useW, sameSize ? sp.useW : W - 20) : sameSize ? sp.useW : W - 20;
+      return { L, W, useL: Math.min(useL || L, L), useW: Math.min(useW || W, W) };
+    });
+    return {
+      blade: s.blade != null ? num(s.blade, d.blade) : d.blade,
+      bandAdd: num(s.bandAdd, d.bandAdd),
+      specs,
+      defaultSpec: [0, 1, 2, 3].includes(Number(s.defaultSpec)) ? Number(s.defaultSpec) : d.defaultSpec,
+    };
+  }
+
+  function saveSettings() {
+    saveJson(STORE_KEY, state.settings);
+  }
+
+  function specFor(key) {
+    const v = state.colorSpecs[key];
+    return [0, 1, 2, 3].includes(v) ? v : state.settings.defaultSpec;
   }
 
   // ---------------------------------------------------------------------------
@@ -123,7 +142,6 @@
     state.parsed = parsed;
     state.rows = parsed.rows.map((r) => ({ ...r }));
     state.edited = false;
-    state.overrides = {};
     renderEditor();
     recompute();
   }
@@ -147,14 +165,15 @@
     const s = state.settings;
     const valid = state.rows.filter((r) => r.Q > 0 && r.L > 0 && r.W > 0 && r.color);
     state.results = core.groupRows(valid).map((g) => {
-      const specIdx = state.overrides[g.key] != null ? state.overrides[g.key] : s.defaultSpec;
+      const specIdx = specFor(g.key);
       const spec = s.specs[specIdx];
       return {
         ...g,
         specIdx,
         spec,
+        remembered: state.colorSpecs[g.key] != null && specIdx !== s.defaultSpec,
         count: g.rows.reduce((n, r) => n + r.Q, 0),
-        pack: core.packGroup(g.rows, spec, { blade: s.blade, trim: s.trim }),
+        pack: core.packGroup(g.rows, spec, { blade: s.blade }),
         band: core.bandingTotals(g.rows, s.bandAdd),
       };
     });
@@ -186,7 +205,7 @@
       const u = r.pack.usable;
       const list = r.pack.tooBig.map((x) => `${esc(x.name)} ${x.L}×${x.W}（${x.Q} 片）`).join('、');
       problems.push(
-        `${esc(r.color)} ${r.thickness}mm：${list} 比規格${r.specIdx + 1}修邊後的 ${u.L}×${u.W} 還大，沒有算進大板片數。可以在結果表把這一組換成大一點的規格。`
+        `${esc(r.color)} ${r.thickness}mm：${list} 比規格${r.specIdx + 1}修邊後可用的 ${u.L}×${u.W} 還大，沒有算進大板片數。可以在結果表把這一組換成大一點的規格。`
       );
     }
 
@@ -224,15 +243,19 @@
           <td><b>${esc(r.color)}</b></td>
           <td class="num">${r.thickness}</td>
           <td class="num">${r.count}</td>
-          <td><select data-group="${i}" aria-label="${esc(r.color)} ${r.thickness}mm 的大板規格">${specOptions(r.specIdx)}</select></td>
+          <td><select data-group="${i}" aria-label="${esc(r.color)} ${r.thickness}mm 的大板規格">${specOptions(r.specIdx)}</select>${
+            r.remembered ? '<span class="remember">這個顏色會記住用這個規格</span>' : ''
+          }</td>
           <td class="num boards">${r.pack.boards.length} <small>片</small>${big ? `<span class="warn-cell">另有 ${big} 片放不進</span>` : ''}</td>
           <td class="num">${meters(r.band.A)}</td>
           <td class="num">${meters(r.band.P)}</td>
         </tr>`;
       })
       .join('');
+    const used = [...new Set(state.results.map((r) => r.specIdx))].sort();
+    const usable = used.map((i) => `規格${i + 1} 可用 ${s.specs[i].useL}×${s.specs[i].useW}`).join('、');
     $('calcNote').textContent =
-      `算法：大板上下左右各修 ${s.trim}mm、每裁一刀扣 ${s.blade}mm（刀片厚度），料件的長對大板的長（不轉向）；` +
+      `算法：大板修邊後的可用尺寸（${usable}）、每裁一刀扣 ${s.blade}mm（刀片厚度），料件的長對大板的長（不轉向）；` +
       `封邊每邊加 ${s.bandAdd}mm，寬欄的代碼封長邊、長欄的代碼封寬邊。大板片數是電腦排版的結果，可點下方排版圖確認。`;
     $('printHead').textContent = `料單：${state.fileName}　列印日期：${new Date().toLocaleDateString('zh-TW')}`;
   }
@@ -267,9 +290,9 @@
     const groups = core.groupIdenticalBoards(r.pack.boards, r.rows);
     let n = 1;
     const u = r.pack.usable;
-    let html = `<p class="grain">大板 ${sp.L} × ${sp.W}，四邊各修 ${r.pack.trim}mm 後可用 ${u.L} × ${u.W}；料件之間留 ${r.pack.blade}mm 刀縫。橫向 = 長（紋路方向），直向 = 寬。外框深灰是修邊，淺灰是剩料。</p>`;
+    let html = `<p class="grain">大板 ${sp.L} × ${sp.W}，修邊後可用 ${u.L} × ${u.W}；料件之間留 ${r.pack.blade}mm 刀縫。橫向 = 長（紋路方向），直向 = 寬。外框深灰是修邊，淺灰是剩料。</p>`;
     if (r.pack.tooBig.length) {
-      html += `<p class="too-big">比修邊後 ${u.L}×${u.W} 還大、沒有排進去的料件：${r.pack.tooBig
+      html += `<p class="too-big">比修邊後可用的 ${u.L}×${u.W} 還大、沒有排進去的料件：${r.pack.tooBig
         .map((x) => `${esc(x.name)} ${x.L}×${x.W}（${x.Q} 片）`)
         .join('、')}</p>`;
     }
@@ -279,7 +302,7 @@
       n += g.count;
       html += `<div class="board-card">
         <p class="board-title"><span>${range}</span>${g.count > 1 ? `<span class="times">同樣排法 × ${g.count} 片</span>` : ''}<span class="fill">使用率 ${Math.round(g.board.fill * 100)}%</span></p>
-        ${boardSvg(g.board, r.rows, sp, r.pack.trim)}
+        ${boardSvg(g.board, r.rows, sp, r.pack)}
       </div>`;
     }
     html += '</div>';
@@ -293,13 +316,15 @@
     return em;
   }
 
-  function boardSvg(board, rows, sp, trim) {
+  function boardSvg(board, rows, sp, pack) {
     let out = `<svg class="board" viewBox="0 0 ${sp.L} ${sp.W}" role="img" aria-label="大板 ${sp.L}×${sp.W} 排版圖">`;
-    if (trim > 0) {
-      // 修邊：外框深灰，可用範圍淺灰（剩料）
-      const t = Math.max(trim, 6); // 太細看不到，畫圖時至少 6mm
+    const { x: ox, y: oy } = pack.offset;
+    if (ox > 0 || oy > 0) {
+      // 修邊：外框深灰，可用範圍淺灰（剩料）；太細看不到，畫圖時至少 6mm
+      const tx = ox > 0 ? Math.max(ox, 6) : 0;
+      const ty = oy > 0 ? Math.max(oy, 6) : 0;
       out += `<rect x="0" y="0" width="${sp.L}" height="${sp.W}" fill="#9aa1ab"/>`;
-      out += `<rect x="${t}" y="${t}" width="${sp.L - 2 * t}" height="${sp.W - 2 * t}" fill="#eceef1"/>`;
+      out += `<rect x="${tx}" y="${ty}" width="${sp.L - 2 * tx}" height="${sp.W - 2 * ty}" fill="#eceef1"/>`;
     }
     for (const q of board.placements) {
       const r = rows[q.ref];
@@ -402,15 +427,30 @@
 
   function renderSettings() {
     const s = state.settings;
-    $('setTrim').value = s.trim;
     $('setBlade').value = s.blade;
     $('setBand').value = s.bandAdd;
-    $('specEdit').innerHTML = s.specs
+    const cell = (i, dim, label) =>
+      `<td><input type="number" min="1" data-spec="${i}" data-dim="${dim}" value="${s.specs[i][dim]}" aria-label="規格${i + 1} ${label}"></td>`;
+    $('specEditBody').innerHTML = s.specs
       .map(
-        (sp, i) => `<span>規格${i + 1} 長</span><input type="number" min="1" data-spec="${i}" data-dim="L" value="${sp.L}" aria-label="規格${i + 1} 長">
-        <span>寬</span><input type="number" min="1" data-spec="${i}" data-dim="W" value="${sp.W}" aria-label="規格${i + 1} 寬">`
+        (sp, i) =>
+          `<tr><th scope="row">規格${i + 1}</th>${cell(i, 'L', '大板長')}${cell(i, 'W', '大板寬')}${cell(i, 'useL', '修邊後可用長')}${cell(i, 'useW', '修邊後可用寬')}</tr>`
       )
       .join('');
+    renderRemembered();
+  }
+
+  function renderRemembered() {
+    const entries = Object.entries(state.colorSpecs);
+    $('rememberedInfo').innerHTML = entries.length
+      ? `已記住的顏色：${entries
+          .map(([k, v]) => {
+            const [color, t] = k.split('|');
+            return `${esc(color)} ${esc(t)}mm → 規格${v + 1}`;
+          })
+          .join('、')}`
+      : '還沒有記住任何顏色。在結果表某一列換規格，就會記住那個顏色。';
+    $('clearRemembered').hidden = !entries.length;
   }
 
   function settingsChanged() {
@@ -469,15 +509,23 @@
 
     $('specSelect').addEventListener('change', (e) => {
       state.settings.defaultSpec = Number(e.target.value);
-      state.overrides = {};
+      // 和新預設一樣的記住項目就不用再記
+      for (const [k, v] of Object.entries(state.colorSpecs)) if (v === state.settings.defaultSpec) delete state.colorSpecs[k];
+      saveJson(COLOR_SPEC_KEY, state.colorSpecs);
+      renderRemembered();
       settingsChanged();
     });
 
+    // 某個顏色換規格：記住，下次同顏色（同厚度）自動套用；換回預設規格就不再記
     $('summaryBody').addEventListener('change', (e) => {
       const sel = e.target.closest('select[data-group]');
       if (!sel) return;
       const r = state.results[Number(sel.dataset.group)];
-      state.overrides[r.key] = Number(sel.value);
+      const v = Number(sel.value);
+      if (v === state.settings.defaultSpec) delete state.colorSpecs[r.key];
+      else state.colorSpecs[r.key] = v;
+      saveJson(COLOR_SPEC_KEY, state.colorSpecs);
+      renderRemembered();
       recompute();
     });
 
@@ -492,24 +540,39 @@
         e.target.value = state.settings[key];
         settingsChanged();
       });
-    numSetting('setTrim', 'trim');
     numSetting('setBlade', 'blade');
     numSetting('setBand', 'bandAdd');
-    $('specEdit').addEventListener('change', (e) => {
+    $('specEditBody').addEventListener('change', (e) => {
       const input = e.target.closest('input[data-spec]');
       if (!input) return;
       const v = Number(input.value);
       const sp = state.settings.specs[Number(input.dataset.spec)];
-      if (Number.isFinite(v) && v > 0) sp[input.dataset.dim] = v;
-      input.value = sp[input.dataset.dim];
+      const dim = input.dataset.dim;
+      if (Number.isFinite(v) && v > 0) {
+        if (dim === 'L' || dim === 'W') {
+          // 改大板尺寸時，可用尺寸跟著平移（修邊量不變）
+          const use = dim === 'L' ? 'useL' : 'useW';
+          sp[use] = Math.max(1, v - (sp[dim] - sp[use]));
+          sp[dim] = v;
+        } else {
+          sp[dim] = Math.min(v, dim === 'useL' ? sp.L : sp.W); // 可用尺寸不能比大板大
+        }
+      }
+      renderSettings();
       settingsChanged();
     });
     $('resetSettings').addEventListener('click', () => {
-      if (!window.confirm('把設定和大板尺寸都恢復成預設值？')) return;
+      if (!window.confirm('把刀片厚度、封邊加長、大板尺寸都恢復成預設值？（記住的顏色規格不會清掉）')) return;
       state.settings = defaults();
-      state.overrides = {};
       renderSettings();
       settingsChanged();
+    });
+    $('clearRemembered').addEventListener('click', () => {
+      if (!window.confirm('清掉所有記住的顏色規格？之後每個顏色都用上方選的規格。')) return;
+      state.colorSpecs = {};
+      saveJson(COLOR_SPEC_KEY, state.colorSpecs);
+      renderRemembered();
+      if (state.parsed) recompute();
     });
 
     $('printSummary').addEventListener('click', () => window.print());
