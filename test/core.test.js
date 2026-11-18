@@ -5,7 +5,7 @@ const core = require('../js/core.js');
 const { assertValidPack, isGuillotine } = require('./helpers.js');
 
 const SPEC4 = { L: 2420, W: 1210 };
-const OPTS = { kerf: 10, trim: 0 };
+const OPTS = { blade: 4, trim: 10 };
 const c = core.parseCode;
 
 // 30mm 檯面組（只取尺寸、數量、封邊代碼）
@@ -56,34 +56,43 @@ test('封邊：寬欄代碼封長邊、長欄代碼封寬邊', () => {
 test('30mm 檯面組用規格 4 需要 5 片大板', () => {
   const res = core.packGroup(COUNTERTOP, SPEC4, OPTS);
   assert.equal(res.boards.length, 5);
-  assertValidPack(res, COUNTERTOP, SPEC4, 10);
+  assertValidPack(res, COUNTERTOP, SPEC4, 4, 10);
 });
 
-test('18mm 紅豆杉組用規格 4 需要 2 片大板', () => {
+test('18mm 紅豆杉組：踢腳板 2401 超過修邊後的 2400 放不進，其餘 2 片大板', () => {
   const res = core.packGroup(YEW, SPEC4, OPTS);
+  assert.deepEqual(res.tooBig.map((r) => [r.L, r.W, r.Q]), [[2401, 141, 4]]);
   assert.equal(res.boards.length, 2);
-  assertValidPack(res, YEW, SPEC4, 10);
+  assertValidPack(res, YEW, SPEC4, 4, 10);
 });
 
-test('放不進大板的料件會被挑出來', () => {
+test('修邊後可用 2400×1190：剛好的放得進，多 1mm 就挑出來', () => {
   const rows = [
-    { name: '太長', L: 2415, W: 300, Q: 2 },
-    { name: '剛好', L: 2410, W: 1200, Q: 1 },
+    { name: '太長', L: 2401, W: 300, Q: 2 },
+    { name: '太寬', L: 1000, W: 1191, Q: 1 },
+    { name: '剛好', L: 2400, W: 1190, Q: 1 },
   ];
   const res = core.packGroup(rows, SPEC4, OPTS);
-  assert.equal(res.tooBig.length, 1);
-  assert.equal(res.tooBig[0].name, '太長');
+  assert.deepEqual(res.tooBig.map((r) => r.name), ['太長', '太寬']);
   assert.equal(res.boards.length, 1);
-  assertValidPack(res, rows, SPEC4, 10);
+  assert.deepEqual(res.usable, { L: 2400, W: 1190 });
+  assertValidPack(res, rows, SPEC4, 4, 10);
 });
 
-test('修邊會縮小可用範圍，位置往內移', () => {
-  // 修邊 5 → 可用 2410×1200；料件 +10 後 2410×1200 剛好、2411 就放不下
-  assert.equal(core.packGroup([{ name: 'a', L: 2400, W: 1190, Q: 1 }], SPEC4, { kerf: 10, trim: 5 }).tooBig.length, 0);
-  assert.equal(core.packGroup([{ name: 'a', L: 2401, W: 1190, Q: 1 }], SPEC4, { kerf: 10, trim: 5 }).tooBig.length, 1);
-  const res = core.packGroup([{ name: 'b', L: 1000, W: 500, Q: 1 }], SPEC4, { kerf: 10, trim: 5 });
-  assert.equal(res.boards[0].placements[0].x, 5);
-  assert.equal(res.boards[0].placements[0].y, 5);
+test('每刀扣 4mm：剛好塞滿與差 1mm 的情況', () => {
+  // 可用長 2400：n 片長 a 排一排要 n×a + (n−1)×4 ≤ 2400
+  // 3 片 797：797×3 + 8 = 2399 → 一片大板一排放得下 3 片
+  const fit = core.packGroup([{ name: 'a', L: 797, W: 1190, Q: 3 }], SPEC4, OPTS);
+  assert.equal(fit.boards.length, 1);
+  // 3 片 798：798×3 + 8 = 2402 → 超過，要 2 片大板
+  assert.equal(core.packGroup([{ name: 'a', L: 798, W: 1190, Q: 3 }], SPEC4, OPTS).boards.length, 2);
+  // 寬向：可用 1190，8 條寬 145：145×8 + 7×4 = 1188 → 放得下
+  assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 145, Q: 8 }], SPEC4, OPTS).boards.length, 1);
+  assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 146, Q: 8 }], SPEC4, OPTS).boards.length, 2);
+  // 第一片從修邊後的位置開始
+  assert.equal(fit.boards[0].placements[0].x, 10);
+  assert.equal(fit.boards[0].placements[0].y, 10);
+  assertValidPack(fit, [{ name: 'a', L: 797, W: 1190, Q: 3 }], SPEC4, 4, 10);
 });
 
 test('數量 0 或空清單不會出錯', () => {
@@ -102,7 +111,7 @@ test('隨機料件：所有排法都合法（不重疊、可一刀切）', () =>
       rows.push({ name: `r${i}`, L: 50 + Math.floor(rand() * 2300), W: 30 + Math.floor(rand() * 1100), Q: 1 + Math.floor(rand() * 4) });
     }
     const res = core.packGroup(rows, SPEC4, OPTS);
-    assertValidPack(res, rows, SPEC4, 10);
+    assertValidPack(res, rows, SPEC4, 4, 10);
 
     const pieces = [];
     rows.forEach((r, ref) => {
@@ -120,9 +129,9 @@ test('隨機料件：所有排法都合法（不重疊、可一刀切）', () =>
 });
 
 test('相同排法的大板會合併計數', () => {
-  const rows = [{ name: '踢腳板', L: 2401, W: 141, Q: 16 }];
+  const rows = [{ name: '踢腳板', L: 2400, W: 141, Q: 16 }];
   const res = core.packGroup(rows, SPEC4, OPTS);
-  assert.equal(res.boards.length, 2); // 每片放 8 條（151×8 = 1208）
+  assert.equal(res.boards.length, 2); // 每片放 8 條（141×8 + 7×4 = 1156 ≤ 1190）
   const groups = core.groupIdenticalBoards(res.boards, rows);
   assert.equal(groups.length, 1);
   assert.equal(groups[0].count, 2);

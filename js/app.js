@@ -3,7 +3,9 @@
   'use strict';
 
   const core = window.PanelCore;
-  const STORE_KEY = 'panelCutting.settings.v1';
+  // v2：改成修邊＋刀縫算法。舊版（v1）只沿用大板尺寸與選的規格，其他用新預設值
+  const STORE_KEY = 'panelCutting.settings.v2';
+  const OLD_STORE_KEY = 'panelCutting.settings.v1';
   const $ = (id) => document.getElementById(id);
 
   const state = {
@@ -26,14 +28,19 @@
   function loadSettings() {
     const d = defaults();
     try {
-      const raw = window.localStorage.getItem(STORE_KEY);
+      let raw = window.localStorage.getItem(STORE_KEY);
+      let old = false;
+      if (!raw) {
+        raw = window.localStorage.getItem(OLD_STORE_KEY);
+        old = true;
+      }
       if (!raw) return d;
       const s = JSON.parse(raw);
-      const num = (v, fb) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : fb);
+      const num = (v, fb) => (v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : fb);
       return {
-        kerf: num(s.kerf, d.kerf),
+        blade: old ? d.blade : num(s.blade, d.blade),
+        trim: old ? d.trim : num(s.trim, d.trim),
         bandAdd: num(s.bandAdd, d.bandAdd),
-        trim: num(s.trim, d.trim),
         specs: d.specs.map((sp, i) => ({
           L: num(s.specs && s.specs[i] && s.specs[i].L, sp.L) || sp.L,
           W: num(s.specs && s.specs[i] && s.specs[i].W, sp.W) || sp.W,
@@ -147,7 +154,7 @@
         specIdx,
         spec,
         count: g.rows.reduce((n, r) => n + r.Q, 0),
-        pack: core.packGroup(g.rows, spec, { kerf: s.kerf, trim: s.trim }),
+        pack: core.packGroup(g.rows, spec, { blade: s.blade, trim: s.trim }),
         band: core.bandingTotals(g.rows, s.bandAdd),
       };
     });
@@ -174,11 +181,20 @@
       }
     }
     for (const w of p.warnings) problems.push(esc(w));
-    const tooBig = state.results.reduce((n, r) => n + r.pack.tooBig.reduce((m, x) => m + x.Q, 0), 0);
-    if (tooBig) problems.push(`有 ${tooBig} 片料件比大板還大，放不進去（請看下方紅字）`);
+    for (const r of state.results) {
+      if (!r.pack.tooBig.length) continue;
+      const u = r.pack.usable;
+      const list = r.pack.tooBig.map((x) => `${esc(x.name)} ${x.L}×${x.W}（${x.Q} 片）`).join('、');
+      problems.push(
+        `${esc(r.color)} ${r.thickness}mm：${list} 比規格${r.specIdx + 1}修邊後的 ${u.L}×${u.W} 還大，沒有算進大板片數。可以在結果表把這一組換成大一點的規格。`
+      );
+    }
 
+    const list = () => `<ul>${problems.map((x) => `<li>${x}</li>`).join('')}</ul>`;
     if (expected != null && expected === actual && !problems.length) {
       setStatus('ok', `✓ 讀到 ${actual} 片，和料單「片數總計 ${expected}」相符${editedNote}`);
+    } else if (expected != null && expected === actual) {
+      setStatus('warn', `✓ 讀到 ${actual} 片，和料單「片數總計 ${expected}」相符${editedNote}。另外請注意：${list()}`);
     } else if (expected != null && expected !== actual) {
       setStatus(
         'warn',
@@ -216,9 +232,8 @@
       })
       .join('');
     $('calcNote').textContent =
-      `算法：料件的長對大板的長（不轉向）、每片長寬各加 ${s.kerf}mm` +
-      (s.trim ? `、大板每邊修邊 ${s.trim}mm` : '') +
-      `；封邊每邊加 ${s.bandAdd}mm，寬欄的代碼封長邊、長欄的代碼封寬邊。大板片數是電腦排版的結果，可點下方排版圖確認。`;
+      `算法：大板上下左右各修 ${s.trim}mm、每裁一刀扣 ${s.blade}mm（刀片厚度），料件的長對大板的長（不轉向）；` +
+      `封邊每邊加 ${s.bandAdd}mm，寬欄的代碼封長邊、長欄的代碼封寬邊。大板片數是電腦排版的結果，可點下方排版圖確認。`;
     $('printHead').textContent = `料單：${state.fileName}　列印日期：${new Date().toLocaleDateString('zh-TW')}`;
   }
 
@@ -251,9 +266,10 @@
     const sp = r.spec;
     const groups = core.groupIdenticalBoards(r.pack.boards, r.rows);
     let n = 1;
-    let html = `<p class="grain">大板 ${sp.L} × ${sp.W}：橫向 = 長（紋路方向），直向 = 寬。灰色是剩料。</p>`;
+    const u = r.pack.usable;
+    let html = `<p class="grain">大板 ${sp.L} × ${sp.W}，四邊各修 ${r.pack.trim}mm 後可用 ${u.L} × ${u.W}；料件之間留 ${r.pack.blade}mm 刀縫。橫向 = 長（紋路方向），直向 = 寬。外框深灰是修邊，淺灰是剩料。</p>`;
     if (r.pack.tooBig.length) {
-      html += `<p class="too-big">放不進這個規格的料件：${r.pack.tooBig
+      html += `<p class="too-big">比修邊後 ${u.L}×${u.W} 還大、沒有排進去的料件：${r.pack.tooBig
         .map((x) => `${esc(x.name)} ${x.L}×${x.W}（${x.Q} 片）`)
         .join('、')}</p>`;
     }
@@ -263,7 +279,7 @@
       n += g.count;
       html += `<div class="board-card">
         <p class="board-title"><span>${range}</span>${g.count > 1 ? `<span class="times">同樣排法 × ${g.count} 片</span>` : ''}<span class="fill">使用率 ${Math.round(g.board.fill * 100)}%</span></p>
-        ${boardSvg(g.board, r.rows, sp, r.pack.kerf)}
+        ${boardSvg(g.board, r.rows, sp, r.pack.trim)}
       </div>`;
     }
     html += '</div>';
@@ -277,19 +293,23 @@
     return em;
   }
 
-  function boardSvg(board, rows, sp, kerf) {
-    const gap = Math.min(kerf, 10) / 2;
+  function boardSvg(board, rows, sp, trim) {
     let out = `<svg class="board" viewBox="0 0 ${sp.L} ${sp.W}" role="img" aria-label="大板 ${sp.L}×${sp.W} 排版圖">`;
+    if (trim > 0) {
+      // 修邊：外框深灰，可用範圍淺灰（剩料）
+      const t = Math.max(trim, 6); // 太細看不到，畫圖時至少 6mm
+      out += `<rect x="0" y="0" width="${sp.L}" height="${sp.W}" fill="#9aa1ab"/>`;
+      out += `<rect x="${t}" y="${t}" width="${sp.L - 2 * t}" height="${sp.W - 2 * t}" fill="#eceef1"/>`;
+    }
     for (const q of board.placements) {
       const r = rows[q.ref];
       const size = `${r.L}×${r.W}`;
       const name = r.name || '';
       const hue = hueFor(`${name}${size}`);
-      const x = q.x + gap / 2;
-      const y = q.y + gap / 2;
-      const w = Math.max(q.w - gap, 1);
-      const h = Math.max(q.h - gap, 1);
-      out += `<g><title>${esc(name)} ${size}</title><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="hsl(${hue} 60% 86%)" stroke="hsl(${hue} 35% 38%)" stroke-width="4"/>`;
+      const { x, y } = q;
+      const w = Math.max(q.w, 1);
+      const h = Math.max(q.h, 1);
+      out += `<g><title>${esc(name)} ${size}</title><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="hsl(${hue} 60% 86%)" stroke="hsl(${hue} 35% 38%)" stroke-width="3"/>`;
       const cx = x + w / 2;
       const cy = y + h / 2;
       const two = Math.min(64, (h * 0.8) / 2.3, (w * 0.9) / Math.max(textEm(name), textEm(size)));
@@ -382,9 +402,9 @@
 
   function renderSettings() {
     const s = state.settings;
-    $('setKerf').value = s.kerf;
-    $('setBand').value = s.bandAdd;
     $('setTrim').value = s.trim;
+    $('setBlade').value = s.blade;
+    $('setBand').value = s.bandAdd;
     $('specEdit').innerHTML = s.specs
       .map(
         (sp, i) => `<span>規格${i + 1} 長</span><input type="number" min="1" data-spec="${i}" data-dim="L" value="${sp.L}" aria-label="規格${i + 1} 長">
@@ -472,9 +492,9 @@
         e.target.value = state.settings[key];
         settingsChanged();
       });
-    numSetting('setKerf', 'kerf');
-    numSetting('setBand', 'bandAdd');
     numSetting('setTrim', 'trim');
+    numSetting('setBlade', 'blade');
+    numSetting('setBand', 'bandAdd');
     $('specEdit').addEventListener('change', (e) => {
       const input = e.target.closest('input[data-spec]');
       if (!input) return;
