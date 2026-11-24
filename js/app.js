@@ -271,9 +271,7 @@
           <td><select data-group="${i}" aria-label="${esc(r.color)} ${r.thickness}mm 的大板規格">${specOptions(r.specIdx)}</select>${
             r.remembered ? '<span class="remember">這個顏色會記住用這個規格</span>' : ''
           }</td>
-          <td class="num boards">${r.pack.boards.length} <small>片</small><span class="board-cai">大板共 ${cai(r.pack.boards.length * core.boardCai(r.spec))} 才</span>${
-            big ? `<span class="warn-cell">另有 ${big} 片放不進</span>` : ''
-          }</td>
+          <td class="num boards">${r.pack.boards.length} <small>片</small>${big ? `<span class="warn-cell">另有 ${big} 片放不進</span>` : ''}</td>
           <td class="num">${meters(r.band.A)}</td>
           <td class="num">${meters(r.band.P)}</td>
         </tr>`;
@@ -284,7 +282,7 @@
     $('calcNote').textContent =
       `算法：大板修邊後的可用尺寸（${usable}）、每裁一刀扣 ${s.blade}mm（刀片厚度），料件的長對大板的長（不轉向）；` +
       `封邊每邊加 ${s.bandAdd}mm，寬欄的代碼封長邊、長欄的代碼封寬邊。` +
-      `才數 = 長 × 寬 × 數量 ÷ 90000（30cm × 30cm 算 1 才，跟料單的才數小計同算法）；「大板共幾才」是大板片數 × 一整片大板的才數。` +
+      `才數 = 長 × 寬 × 數量 ÷ 90000（30cm × 30cm 算 1 才，跟料單的才數小計同算法）。` +
       `大板片數是電腦排版的結果，可點下方排版圖確認。`;
     $('printHead').textContent = `料單：${state.fileName}　列印日期：${new Date().toLocaleDateString('zh-TW')}`;
   }

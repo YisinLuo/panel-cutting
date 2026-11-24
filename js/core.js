@@ -32,11 +32,6 @@
     return mm2 / CAI_MM2;
   }
 
-  /** 一片大板（整片，含修邊）的才數 */
-  function boardCai(spec) {
-    return (spec.L * spec.W) / CAI_MM2;
-  }
-
   const DEFAULT_SETTINGS = {
     blade: 6, // 每刀扣（刀片厚度）
     bandAdd: 30, // 封邊每邊加長
@@ -648,7 +643,6 @@
     DEFAULT_SETTINGS,
     CAI_TOLERANCE,
     caiOf,
-    boardCai,
     parseTextItems,
     parseCode,
     formatCode,

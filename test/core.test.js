@@ -180,8 +180,6 @@ test('才數：長×寬×數量 ÷ 90000（30cm×30cm 算 1 才）', () => {
   assert.equal(core.caiOf([{ L: 300, W: 300, Q: 1 }]), 1);
   assert.equal(core.caiOf([{ L: 600, W: 300, Q: 3 }]), 6);
   assert.equal(core.caiOf([{ L: 600, W: 300, Q: 0 }]), 0);
-  // 一整片規格 4 大板 2420×1210 = 32.54 才
-  assert.equal(core.boardCai(core.DEFAULT_SETTINGS.specs[3]).toFixed(2), '32.54');
 });
 
 test('讀料單：才數小計、才數總計拿來核對', () => {

@@ -84,7 +84,6 @@
   .summary .boards small { font-size: 16px; font-weight: 400; color: var(--text); }
   .summary select { font-size: 16px; padding: 6px 8px; }
   .summary .warn-cell { color: var(--err); font-size: 15px; font-weight: 700; display: block; }
-  .summary .board-cai { display: block; font-size: 15px; font-weight: 400; color: var(--muted); margin-top: 2px; white-space: nowrap; }
   .tag { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 14px; font-weight: 700; }
   .tag.a { background: #fde7c7; color: #7a4100; }
   .tag.p { background: #dcecff; color: #0b4a9c; }
@@ -139,7 +138,6 @@
     .print-head { display: block; margin-bottom: 8px; }
     .summary td { font-size: 14px; }
     .summary .boards { font-size: 18px; color: #000; }
-    .summary .board-cai { font-size: 12px; color: #000; }
     .summary select { border: 0; padding: 0; appearance: none; -webkit-appearance: none; font-size: 14px; }
     h1 { font-size: 20px; }
     .boards-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -151,7 +149,7 @@
 <main>
   <header>
     <h1>裁板計算</h1>
-    <p class="sub">把生產料單 PDF 放進來，自動算出每個顏色、厚度要幾片大板，還有封邊條要多長。</p>
+    <p class="sub">把生產料單 PDF 放進來，自動算出每個顏色、厚度的才數、要幾片大板，還有封邊條要多長。</p>
     <div class="print-head" id="printHead"></div>
   </header>
 
@@ -249,7 +247,7 @@
 </main>
 
 <script src="vendor/pdfjs/pdf.min.js"></script>
-<script src="js/core.js?v=6"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/core.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>
