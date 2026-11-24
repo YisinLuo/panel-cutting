@@ -96,6 +96,7 @@
   const esc = (s) =>
     String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const meters = (mm) => (mm > 0 ? `${(mm / 1000).toFixed(2)} 米` : '—');
+  const cai = (v) => (Math.round(v * 100) / 100).toFixed(2);
   const specText = (i) => {
     const sp = state.settings.specs[i];
     return `規格${i + 1}：${sp.L} × ${sp.W}`;
@@ -184,6 +185,7 @@
         spec,
         remembered: state.colorSpecs[g.key] != null && specIdx !== s.defaultSpec,
         count: g.rows.reduce((n, r) => n + r.Q, 0),
+        cai: core.caiOf(g.rows),
         pack: core.packGroup(g.rows, spec, { blade: s.blade }),
         band: core.bandingTotals(g.rows, s.bandAdd),
       };
@@ -203,13 +205,24 @@
     const expected = p.total.expected;
     const editedNote = state.edited ? '（資料有手動修改過）' : '';
     const problems = [];
+    const caiBad = (exp, act) => exp != null && Math.abs(exp - act) > core.CAI_TOLERANCE;
     if (!state.edited) {
       for (const b of p.blocks) {
         if (b.expected != null && b.expected !== b.actual) {
           problems.push(`${esc(b.color)} ${b.thickness}mm：讀到 ${b.actual} 片，料單寫 ${b.expected} 片`);
         }
+        if (caiBad(b.caiExpected, b.caiActual)) {
+          problems.push(`${esc(b.color)} ${b.thickness}mm：算出 ${cai(b.caiActual)} 才，料單寫 ${cai(b.caiExpected)} 才（可能有尺寸讀錯）`);
+        }
+      }
+      if (caiBad(p.total.caiExpected, p.total.caiActual)) {
+        problems.push(`全部算出 ${cai(p.total.caiActual)} 才，料單「才數總計」寫 ${cai(p.total.caiExpected)} 才`);
       }
     }
+    const caiNote =
+      !state.edited && p.total.caiExpected != null && !caiBad(p.total.caiExpected, p.total.caiActual)
+        ? `、${cai(p.total.caiActual)} 才，和料單「片數總計 ${expected}」「才數總計 ${cai(p.total.caiExpected)}」都相符`
+        : `，和料單「片數總計 ${expected}」相符`;
     for (const w of p.warnings) problems.push(esc(w));
     for (const r of state.results) {
       if (!r.pack.tooBig.length) continue;
@@ -222,9 +235,9 @@
 
     const list = () => `<ul>${problems.map((x) => `<li>${x}</li>`).join('')}</ul>`;
     if (expected != null && expected === actual && !problems.length) {
-      setStatus('ok', `✓ 讀到 ${actual} 片，和料單「片數總計 ${expected}」相符${editedNote}`);
+      setStatus('ok', `✓ 讀到 ${actual} 片${caiNote}${editedNote}`);
     } else if (expected != null && expected === actual) {
-      setStatus('warn', `✓ 讀到 ${actual} 片，和料單「片數總計 ${expected}」相符${editedNote}。另外請注意：${list()}`);
+      setStatus('warn', `✓ 讀到 ${actual} 片${caiNote}${editedNote}。另外請注意：${list()}`);
     } else if (expected != null && expected !== actual) {
       setStatus(
         'warn',
@@ -254,10 +267,13 @@
           <td><b>${esc(r.color)}</b></td>
           <td class="num">${r.thickness}</td>
           <td class="num">${r.count}</td>
+          <td class="num">${cai(r.cai)}</td>
           <td><select data-group="${i}" aria-label="${esc(r.color)} ${r.thickness}mm 的大板規格">${specOptions(r.specIdx)}</select>${
             r.remembered ? '<span class="remember">這個顏色會記住用這個規格</span>' : ''
           }</td>
-          <td class="num boards">${r.pack.boards.length} <small>片</small>${big ? `<span class="warn-cell">另有 ${big} 片放不進</span>` : ''}</td>
+          <td class="num boards">${r.pack.boards.length} <small>片</small><span class="board-cai">大板共 ${cai(r.pack.boards.length * core.boardCai(r.spec))} 才</span>${
+            big ? `<span class="warn-cell">另有 ${big} 片放不進</span>` : ''
+          }</td>
           <td class="num">${meters(r.band.A)}</td>
           <td class="num">${meters(r.band.P)}</td>
         </tr>`;
@@ -267,7 +283,9 @@
     const usable = used.map((i) => `規格${i + 1} 可用 ${s.specs[i].useL}×${s.specs[i].useW}`).join('、');
     $('calcNote').textContent =
       `算法：大板修邊後的可用尺寸（${usable}）、每裁一刀扣 ${s.blade}mm（刀片厚度），料件的長對大板的長（不轉向）；` +
-      `封邊每邊加 ${s.bandAdd}mm，寬欄的代碼封長邊、長欄的代碼封寬邊。大板片數是電腦排版的結果，可點下方排版圖確認。`;
+      `封邊每邊加 ${s.bandAdd}mm，寬欄的代碼封長邊、長欄的代碼封寬邊。` +
+      `才數 = 長 × 寬 × 數量 ÷ 90000（30cm × 30cm 算 1 才，跟料單的才數小計同算法）；「大板共幾才」是大板片數 × 一整片大板的才數。` +
+      `大板片數是電腦排版的結果，可點下方排版圖確認。`;
     $('printHead').textContent = `料單：${state.fileName}　列印日期：${new Date().toLocaleDateString('zh-TW')}`;
   }
 

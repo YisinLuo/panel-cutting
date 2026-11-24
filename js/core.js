@@ -20,6 +20,23 @@
   // 媽媽確認（2026-11-18）：料件尺寸不另外加，每裁一刀扣刀片厚度；後來改說「每切一刀抓 6MM」。
   // 大板修邊：原則上四邊各修 10mm（媽媽確認規格 1～3 這樣 OK），但「只是大概」——規格 4（2420×1210）可以用到 2405×1195。
   // 所以每個規格各自記「修邊後可用的長 useL × 寬 useW」。
+  // 才數：料單上的「才數小計」= Σ 長×寬×數量（mm²）÷ 90000，也就是 30cm × 30cm 算 1 才
+  // （用範例料單 5 組小計與總計 2494.65 反推驗證過）
+  const CAI_MM2 = 90000;
+  const CAI_TOLERANCE = 0.02; // 料單取到小數第 2 位，核對時容許的誤差
+
+  /** 一組料件的才數（未四捨五入） */
+  function caiOf(rows) {
+    let mm2 = 0;
+    for (const r of rows) if (r.Q > 0) mm2 += r.L * r.W * r.Q;
+    return mm2 / CAI_MM2;
+  }
+
+  /** 一片大板（整片，含修邊）的才數 */
+  function boardCai(spec) {
+    return (spec.L * spec.W) / CAI_MM2;
+  }
+
   const DEFAULT_SETTINGS = {
     blade: 6, // 每刀扣（刀片厚度）
     bandAdd: 30, // 封邊每邊加長
@@ -87,9 +104,10 @@
   function parseTextItems(items) {
     const warnings = [];
     const rows = [];
-    const blocks = []; // 每個「顏色」標題一塊：{ color, thickness, expected, actual }
+    const blocks = []; // 每個「顏色」標題一塊：{ color, thickness, expected, actual, caiExpected, caiActual }
     const sections = []; // 每個「厚」標題一段：{ thickness, expected, actual }
     let docTotal = null;
+    let docCai = null;
     let tailTotal = null;
     let cols = null; // 欄位分界（取自表頭）
     let section = null;
@@ -137,13 +155,16 @@
             thickness: section ? section.thickness : null,
             expected: valueAfter(line, /^片數小計/, 120),
             actual: 0,
+            caiExpected: valueAfter(line, /^才數小計/, 120),
+            caiActual: 0,
           };
           blocks.push(block);
           continue;
         }
 
-        if (has(/片數總計/)) {
-          docTotal = valueAfter(line, /^片數總計/, 150);
+        if (has(/片數總計/) || has(/才數總計/)) {
+          if (has(/片數總計/)) docTotal = valueAfter(line, /^片數總計/, 150);
+          if (has(/才數總計/)) docCai = valueAfter(line, /^才數總計/, 150);
           continue;
         }
 
@@ -151,12 +172,13 @@
         if (row) {
           row.page = p;
           if (!block) {
-            block = { color: row.colorShort, thickness: row.T, expected: null, actual: 0 };
+            block = { color: row.colorShort, thickness: row.T, expected: null, actual: 0, caiExpected: null, caiActual: 0 };
             blocks.push(block);
           }
           row.color = block.color || row.colorShort;
           row.thickness = row.T;
           block.actual += row.Q;
+          block.caiActual += caiOf([row]);
           if (section) section.actual += row.Q;
           rows.push(row);
           pageRows.push(row);
@@ -202,11 +224,18 @@
     }
 
     const actualTotal = rows.reduce((s, r) => s + r.Q, 0);
-    const total = { expected: docTotal != null ? docTotal : tailTotal, actual: actualTotal };
+    const total = {
+      expected: docTotal != null ? docTotal : tailTotal,
+      actual: actualTotal,
+      caiExpected: docCai,
+      caiActual: caiOf(rows),
+    };
+    const caiOk = (exp, act) => exp == null || Math.abs(exp - act) <= CAI_TOLERANCE;
     const ok =
       rows.length > 0 &&
       (total.expected == null || total.expected === total.actual) &&
-      blocks.every((b) => b.expected == null || b.expected === b.actual) &&
+      caiOk(total.caiExpected, total.caiActual) &&
+      blocks.every((b) => (b.expected == null || b.expected === b.actual) && caiOk(b.caiExpected, b.caiActual)) &&
       sections.every((s) => s.expected == null || s.expected === s.actual);
 
     if (!rows.length) warnings.push('沒有讀到任何料件，這個 PDF 可能不是生產料單格式');
@@ -617,6 +646,9 @@
 
   return {
     DEFAULT_SETTINGS,
+    CAI_TOLERANCE,
+    caiOf,
+    boardCai,
     parseTextItems,
     parseCode,
     formatCode,

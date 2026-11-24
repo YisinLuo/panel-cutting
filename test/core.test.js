@@ -173,3 +173,34 @@ test('預設每刀扣 6mm（媽媽改的）：規格 4 剛好塞滿與差 1mm �
   assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 144, Q: 8 }], spec4).boards.length, 1);
   assert.equal(core.packGroup([{ name: 'b', L: 2400, W: 145, Q: 8 }], spec4).boards.length, 2);
 });
+
+test('才數：長×寬×數量 ÷ 90000（30cm×30cm 算 1 才）', () => {
+  // 30mm 檯面組：料單寫才數小計 116.69
+  assert.equal(core.caiOf(COUNTERTOP).toFixed(2), '116.69');
+  assert.equal(core.caiOf([{ L: 300, W: 300, Q: 1 }]), 1);
+  assert.equal(core.caiOf([{ L: 600, W: 300, Q: 3 }]), 6);
+  assert.equal(core.caiOf([{ L: 600, W: 300, Q: 0 }]), 0);
+  // 一整片規格 4 大板 2420×1210 = 32.54 才
+  assert.equal(core.boardCai(core.DEFAULT_SETTINGS.specs[3]).toFixed(2), '32.54');
+});
+
+test('讀料單：才數小計、才數總計拿來核對', () => {
+  const T = (str, x, y) => ({ str, x, y, page: 1 });
+  const make = (sub, total) => [
+    T('才數總計:', 89, 750), T(String(total), 164, 750), T('片數總計:', 365, 750), T('2', 443, 750),
+    T('厚', 60, 700), T('18', 80, 700), T('總計', 200, 700), T('2', 260, 700),
+    T('顏色', 62, 680), T('測試色', 94, 680), T('片數小計:', 246, 680), T('2', 300, 680), T('才數小計:', 404, 680), T(String(sub), 460, 680),
+    T('1001', 20, 660), T('1', 40, 660), T('側板', 70, 660), T('測試', 110, 660), T('600', 200, 660), T('300', 260, 660), T('18', 300, 660), T('1', 330, 660),
+    T('1001', 20, 640), T('2', 40, 640), T('背板', 70, 640), T('測試', 110, 640), T('1200', 200, 640), T('200', 260, 640), T('18', 300, 640), T('1', 330, 640),
+  ];
+  // 600×300 = 2 才、1200×200 = 2.67 才 → 4.67
+  const good = core.parseTextItems(make('4.67', '4.67'));
+  assert.equal(good.rows.length, 2);
+  assert.equal(good.blocks[0].caiExpected, 4.67);
+  assert.equal(good.blocks[0].caiActual.toFixed(2), '4.67');
+  assert.equal(good.total.caiExpected, 4.67);
+  assert.equal(good.ok, true);
+  // 小計對不上（例如尺寸讀錯）→ 不算通過
+  assert.equal(core.parseTextItems(make('5.67', '4.67')).ok, false);
+  assert.equal(core.parseTextItems(make('4.67', '9.99')).ok, false);
+});
